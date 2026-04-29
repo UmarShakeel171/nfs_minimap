@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0d14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MiniMap">
+<title>MiniMap</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #080b10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  #bezel {
+    position: relative;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 30% 25%, #1e2530 0%, #0d1017 60%, #070a0e 100%);
+    box-shadow:
+      inset 0 2px 4px rgba(255,255,255,0.06),
+      inset 0 -2px 6px rgba(0,0,0,0.8),
+      0 0 0 4px #0d1117,
+      0 0 0 7px #161d28,
+      0 0 0 9px #0a0d14,
+      0 8px 32px rgba(0,0,0,0.9);
+  }
+
+  #north-arrow {
+    position: absolute;
+    top: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 18px solid #e8a030;
+    filter: drop-shadow(0 0 5px rgba(232,160,48,0.8));
+    z-index: 20;
+    transition: none;
+  }
+
+  #map-wrap {
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #0a1520;
+  }
+
+  #map-canvas, #overlay-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    border-radius: 50%;
+  }
+
+  #vignette {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle, transparent 55%, rgba(0,8,18,0.75) 100%);
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  #ticks {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 15;
+  }
+
+  #info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-family: 'Courier New', 'Lucida Console', monospace;
+    color: #3a6080;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  #speed-row { display: flex; align-items: baseline; gap: 4px; }
+
+  #speed-val {
+    font-size: 36px;
+    font-weight: 700;
+    color: #b8d4e8;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.3s;
+  }
+
+  #speed-unit { font-size: 11px; color: #3a5a70; letter-spacing: 0.1em; }
+  #hdg-row { color: #e8a030; font-size: 11px; letter-spacing: 0.14em; }
+
+  #status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    color: #2a4a60;
+  }
+
+  .gps-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #e05050;
+    transition: background 0.5s;
+    flex-shrink: 0;
+  }
+  .gps-dot.active { background: #50c870; box-shadow: 0 0 6px #50c870; }
+  .gps-dot.searching { background: #e8a030; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  #legend {
+    display: flex;
+    gap: 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 9px;
+    color: #2a4060;
+    letter-spacing: 0.08em;
+  }
+  .leg-item { display: flex; align-items: center; gap: 4px; }
+  .leg-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+  #zoom-row { display: flex; gap: 8px; }
+  .zoom-btn {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #0d1520;
+    border: 1px solid #1e3040;
+    color: #4a7a9a;
+    font-size: 18px;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.15s, color 0.15s;
+  }
+  .zoom-btn:active { background: #1a2840; color: #7ab8d8; }
+
+  #gps-btn {
+    padding: 8px 20px;
+    background: #0d1520;
+    border: 1px solid #1e3040;
+    border-radius: 20px;
+    color: #4a9aba;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  #gps-btn:active { background: #1a2840; }
+  #gps-btn.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="bezel">
+    <div id="north-arrow"></div>
+    <div id="map-wrap">
+      <canvas id="map-canvas"></canvas>
+      <canvas id="overlay-canvas"></canvas>
+      <div id="vignette"></div>
+    </div>
+    <svg id="ticks" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div id="info">
+    <div id="speed-row">
+      <span id="speed-val">0</span>
+      <span id="speed-unit">km/h</span>
+    </div>
+    <div id="hdg-row">HDG 000° N</div>
+    <div id="status-row">
+      <div class="gps-dot" id="gps-dot"></div>
+      <span id="gps-label">tap GPS to start</span>
+    </div>
+  </div>
+
+  <div id="zoom-row">
+    <button class="zoom-btn" id="zoom-out">−</button>
+    <button class="zoom-btn" id="zoom-in">+</button>
+  </div>
+
+  <button id="gps-btn">⊕ Enable GPS</button>
+
+  <div id="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#7ec87e;"></div>YOU</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#a0a0f0;"></div>WPT</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#e8a030;"></div>NORTH</div>
+  </div>
+</div>
+
+<script>
+const TILE_SIZE = 256;
+const MIN_ZOOM = 13, MAX_ZOOM = 18;
+
+const WAYPOINTS = [
+  { lat: 0, lng: 0, label: 'WPT1', color: '#a0a0f0', offsetLat: 0.003, offsetLng: 0.004 },
+  { lat: 0, lng: 0, label: 'WPT2', color: '#e05870', offsetLat: -0.005, offsetLng: 0.002 },
+  { lat: 0, lng: 0, label: 'WPT3', color: '#50c8b0', offsetLat: 0.001, offsetLng: -0.006 },
+];
+
+let state = {
+  lat: 33.7215,
+  lng: 73.0433,
+  heading: 0,
+  speed: 0,
+  zoom: 16,
+  gpsActive: false,
+  watchId: null,
+  compassHeading: null,
+  smoothHeading: 0,
+};
+
+function resolveWaypoints() {
+  WAYPOINTS.forEach(w => {
+    w.lat = state.lat + w.offsetLat;
+    w.lng = state.lng + w.offsetLng;
+  });
+}
+
+// ── Canvas setup ──────────────────────────────
+const mapCanvas = document.getElementById('map-canvas');
+const overlayCanvas = document.getElementById('overlay-canvas');
+const mapWrap = document.getElementById('map-wrap');
+
+// Offscreen canvas for color treatment (avoids re-drawing tiles each frame)
+const offscreen = document.createElement('canvas');
+
+function resizeCanvases() {
+  const s = mapWrap.clientWidth;
+  mapCanvas.width = s;  mapCanvas.height = s;
+  overlayCanvas.width = s; overlayCanvas.height = s;
+  offscreen.width = s; offscreen.height = s;
+}
+resizeCanvases();
+window.addEventListener('resize', () => { resizeCanvases(); draw(); });
+
+// ── Tile cache ────────────────────────────────
+const tileCache = new Map();
+
+function getTile(z, x, y) {
+  const n = Math.pow(2, z);
+  x = ((x % n) + n) % n;
+  const key = `${z}/${x}/${y}`;
+  if (tileCache.has(key)) return tileCache.get(key);
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  const server = ['a','b','c'][Math.abs(x + y) % 3];
+  img.src = `https://${server}.tile.openstreetmap.org/${z}/${x}/${y}.png`;
+  img.onload = () => { tileCache.set(key, img); draw(); };
+  img.onerror = () => { tileCache.set(key, 'error'); };
+  tileCache.set(key, null);
+  return null;
+}
+
+// ── Geo math ──────────────────────────────────
+function latLngToTileXY(lat, lng, z) {
+  const n = Math.pow(2, z);
+  const x = (lng + 180) / 360 * n;
+  const latRad = lat * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+  return { x, y };
+}
+
+function latLngToPixelOffset(lat1, lng1, lat2, lng2, z) {
+  const p1 = latLngToTileXY(lat1, lng1, z);
+  const p2 = latLngToTileXY(lat2, lng2, z);
+  return { dx: (p2.x - p1.x) * TILE_SIZE, dy: (p2.y - p1.y) * TILE_SIZE };
+}
+
+// ── Draw ──────────────────────────────────────
+function draw() { drawMap(); drawOverlay(); }
+
+function drawMap() {
+  const ctx = mapCanvas.getContext('2d');
+  const S = mapCanvas.width;
+  const CX = S / 2, CY = S / 2, R = S / 2;
+  const h = state.smoothHeading;
+
+  ctx.clearRect(0, 0, S, S);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(CX, CY, R, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = '#07111a';
+  ctx.fillRect(0, 0, S, S);
+
+  const tp = latLngToTileXY(state.lat, state.lng, state.zoom);
+  const tileX = Math.floor(tp.x);
+  const tileY = Math.floor(tp.y);
+  const fracX = (tp.x - tileX) * TILE_SIZE;
+  const fracY = (tp.y - tileY) * TILE_SIZE;
+
+  // ── Draw tiles onto offscreen canvas (no transform, no clip) ──
+  const oct = offscreen.getContext('2d');
+  oct.clearRect(0, 0, S, S);
+
+  // Translate so player tile position maps to canvas center
+  oct.save();
+  oct.translate(CX, CY);
+  oct.rotate(-h * Math.PI / 180);
+  oct.translate(-fracX - TILE_SIZE, -fracY - TILE_SIZE);
+
+  const range = 3;
+  for (let dy = -range; dy <= range; dy++) {
+    for (let dx = -range; dx <= range; dx++) {
+      const tx = tileX + dx - 1;
+      const ty = tileY + dy - 1;
+      if (ty < 0 || ty >= Math.pow(2, state.zoom)) continue;
+      const img = getTile(state.zoom, tx, ty);
+      if (img && img !== 'error') {
+        oct.drawImage(img, dx * TILE_SIZE, dy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // ── NFS color treatment (all on offscreen, within the rotation transform) ──
+  // Step 1: Invert — turns OSM's light beige bg dark, grey roads become bright
+  oct.globalCompositeOperation = 'difference';
+  oct.fillStyle = '#ffffff';
+  oct.fillRect(-4000, -4000, 10000, 10000);
+
+  // Step 2: Multiply with dark teal — kills warm post-inversion hues, pushes to navy
+  oct.globalCompositeOperation = 'multiply';
+  oct.fillStyle = '#1e4458';
+  oct.fillRect(-4000, -4000, 10000, 10000);
+
+  // Step 3: Second multiply to deepen the darks
+  oct.globalCompositeOperation = 'multiply';
+  oct.fillStyle = '#1a2e3a';
+  oct.fillRect(-4000, -4000, 10000, 10000);
+
+  oct.globalCompositeOperation = 'source-over';
+  oct.restore();
+
+  // ── Blit offscreen onto map canvas (already clipped to circle) ──
+  ctx.drawImage(offscreen, 0, 0);
+  ctx.restore();
+}
+
+function drawOverlay() {
+  const ctx = overlayCanvas.getContext('2d');
+  const S = overlayCanvas.width;
+  const CX = S / 2, CY = S / 2, R = S / 2;
+  const h = state.smoothHeading;
+
+  ctx.clearRect(0, 0, S, S);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(CX, CY, R, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Waypoints
+  WAYPOINTS.forEach(wp => {
+    const off = latLngToPixelOffset(state.lat, state.lng, wp.lat, wp.lng, state.zoom);
+    const rad = -h * Math.PI / 180;
+    const rx = off.dx * Math.cos(rad) - off.dy * Math.sin(rad);
+    const ry = off.dx * Math.sin(rad) + off.dy * Math.cos(rad);
+    const px = CX + rx, py = CY + ry;
+    if (Math.sqrt(rx*rx + ry*ry) > R - 8) return;
+
+    ctx.save();
+    ctx.shadowColor = wp.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(px, py, 5, 0, Math.PI * 2);
+    ctx.fillStyle = wp.color;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff88';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    ctx.fillStyle = wp.color;
+    ctx.font = '500 8px Courier New';
+    ctx.fillText(wp.label, px + 7, py - 4);
+  });
+
+  // Player arrow
+  const arrowSize = 11;
+  ctx.save();
+  ctx.translate(CX, CY);
+  ctx.shadowColor = '#e8e050';
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.moveTo(0, -arrowSize);
+  ctx.lineTo(arrowSize * 0.55, arrowSize * 0.65);
+  ctx.lineTo(0, arrowSize * 0.25);
+  ctx.lineTo(-arrowSize * 0.55, arrowSize * 0.65);
+  ctx.closePath();
+  ctx.fillStyle = '#f0e050';
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur = 6;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  // Accuracy ring
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(CX, CY, 16, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(240,224,80,0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ── Bezel ticks ───────────────────────────────
+function drawTicks() {
+  const svg = document.getElementById('ticks');
+  const CX = 150, CY = 150, OR = 148, IR_MAJ = 140, IR_MIN = 143;
+  let markup = '';
+  for (let i = 0; i < 360; i += 5) {
+    const isMajor = i % 45 === 0;
+    const isMed = i % 15 === 0;
+    const r2 = isMajor ? IR_MAJ - 4 : isMed ? IR_MAJ : IR_MIN;
+    const rad = (i - 90) * Math.PI / 180;
+    const x1 = CX + OR * Math.cos(rad), y1 = CY + OR * Math.sin(rad);
+    const x2 = CX + r2 * Math.cos(rad), y2 = CY + r2 * Math.sin(rad);
+    const color = isMajor ? '#e8a030' : isMed ? '#3a6080' : '#1e3040';
+    markup += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="${isMajor?1.5:0.75}"/>`;
+  }
+  const cardinals = [['N',0],['E',90],['S',180],['W',270]];
+  cardinals.forEach(([letter, deg]) => {
+    const rad = (deg - 90) * Math.PI / 180;
+    const r = 128;
+    const x = CX + r * Math.cos(rad), y = CY + r * Math.sin(rad) + 4;
+    markup += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" fill="${letter==='N'?'#e8a030':'#3a6080'}" font-size="10" font-family="Courier New" font-weight="600" letter-spacing="0.1em">${letter}</text>`;
+  });
+  svg.innerHTML = markup;
+}
+drawTicks();
+
+// ── Heading smoothing ─────────────────────────
+function angleDiff(a, b) {
+  let d = b - a;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+
+function smoothHeading(target) {
+  const diff = angleDiff(state.smoothHeading, target);
+  state.smoothHeading += diff * 0.15;
+  state.smoothHeading = ((state.smoothHeading % 360) + 360) % 360;
+}
+
+function updateHeadingUI(deg) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  const dir = dirs[Math.round(deg / 22.5) % 16];
+  document.getElementById('hdg-row').textContent = `HDG ${String(Math.round(deg)).padStart(3,'0')}° ${dir}`;
+  document.getElementById('north-arrow').style.transform = `translateX(-50%) rotate(${state.smoothHeading}deg)`;
+}
+
+// ── Animation loop ────────────────────────────
+function animLoop() {
+  if (state.heading !== null) {
+    smoothHeading(state.heading);
+    updateHeadingUI(state.heading);
+  }
+  draw();
+  requestAnimationFrame(animLoop);
+}
+animLoop();
+
+// ── Device orientation / compass ──────────────
+function onOrientation(e) {
+  let alpha = null;
+  if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+    alpha = e.webkitCompassHeading;
+  } else if (e.alpha !== null) {
+    alpha = (360 - e.alpha) % 360;
+  }
+  if (alpha !== null) state.heading = alpha;
+}
+window.addEventListener('deviceorientationabsolute', onOrientation, true);
+window.addEventListener('deviceorientation', onOrientation, true);
+
+// ── GPS ───────────────────────────────────────
+function startGPS() {
+  if (!navigator.geolocation) {
+    document.getElementById('gps-label').textContent = 'GPS not supported';
+    return;
+  }
+  document.getElementById('gps-dot').className = 'gps-dot searching';
+  document.getElementById('gps-label').textContent = 'acquiring fix...';
+  document.getElementById('gps-btn').classList.add('hidden');
+  resolveWaypoints();
+
+  state.watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      state.lat = pos.coords.latitude;
+      state.lng = pos.coords.longitude;
+      if (pos.coords.speed !== null && pos.coords.speed >= 0) {
+        state.speed = pos.coords.speed * 3.6;
+      }
+      if (state.compassHeading === null && pos.coords.heading !== null && state.speed > 3) {
+        state.heading = pos.coords.heading;
+      }
+      state.gpsActive = true;
+      document.getElementById('gps-dot').className = 'gps-dot active';
+      document.getElementById('gps-label').textContent = `±${Math.round(pos.coords.accuracy)}m`;
+      document.getElementById('speed-val').textContent = Math.round(state.speed);
+    },
+    (err) => {
+      document.getElementById('gps-dot').className = 'gps-dot';
+      document.getElementById('gps-label').textContent = 'GPS error – ' + err.message;
+    },
+    { enableHighAccuracy: true, maximumAge: 500, timeout: 15000 }
+  );
+}
+document.getElementById('gps-btn').addEventListener('click', startGPS);
+
+// ── Zoom ──────────────────────────────────────
+document.getElementById('zoom-in').addEventListener('click', () => {
+  if (state.zoom < MAX_ZOOM) { state.zoom++; tileCache.clear(); draw(); }
+});
+document.getElementById('zoom-out').addEventListener('click', () => {
+  if (state.zoom > MIN_ZOOM) { state.zoom--; tileCache.clear(); draw(); }
+});
+
+// ── Wake lock ─────────────────────────────────
+async function keepAwake() {
+  try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch(e) {}
+}
+keepAwake();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); });
+
+// ── Service worker ────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(()=>{}); });
+}
+
+// ── Init ──────────────────────────────────────
+resolveWaypoints();
+draw();
+</script>
+</body>
+</html>
